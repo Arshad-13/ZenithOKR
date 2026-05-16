@@ -99,6 +99,29 @@ def create_goal(goal: schemas.GoalCreate, db: Session = Depends(get_db)):
     
     return new_goal
 
+def calculate_progress_score(actual: float, target: float, uom: models.UoMEnum) -> float:
+    """Calculates the progress percentage based on the BRD formulas."""
+    try:
+        if uom == models.UoMEnum.NUMERIC_MIN:
+            # Higher is better: (Achievement / Target) * 100
+            return round((actual / target) * 100, 2)
+            
+        elif uom == models.UoMEnum.NUMERIC_MAX:
+            # Lower is better: (Target / Achievement) * 100
+            return round((target / actual) * 100, 2)
+            
+        elif uom == models.UoMEnum.ZERO_BASED:
+            # Zero = Success: If 0 -> 100%, else 0%
+            return 100.0 if actual == 0 else 0.0
+            
+        elif uom == models.UoMEnum.TIMELINE:
+            # Date-based: For hackathon simplicity, assuming 'actual' is days taken vs 'target' days
+            return round((target / actual) * 100, 2) if actual > 0 else 100.0
+            
+    except ZeroDivisionError:
+        return 0.0
+    
+    return 0.0
 
 @app.get("/goals/{owner_id}", response_model=list[schemas.GoalResponse])
 def get_employee_goals(owner_id: str, db: Session = Depends(get_db)):
@@ -164,3 +187,73 @@ def update_or_approve_goal(goal_id: int, updates: schemas.GoalUpdate, db: Sessio
     db.refresh(goal)
     
     return goal
+@app.post("/check-ins", response_model=schemas.CheckInResponse)
+def create_check_in(check_in: schemas.CheckInCreate, db: Session = Depends(get_db)):
+    """Employee logs their quarterly achievement."""
+    
+    # Verify the goal exists and is actually locked (approved)
+    goal = db.query(models.Goal).filter(models.Goal.id == check_in.goal_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if not goal.is_locked:
+        raise HTTPException(status_code=400, detail="Cannot log achievements against an unapproved goal.")
+
+    # Create the check-in record
+    new_check_in = models.CheckIn(
+        goal_id=check_in.goal_id,
+        quarter=check_in.quarter,
+        actual_achievement=check_in.actual_achievement,
+        status=check_in.status
+    )
+    
+    db.add(new_check_in)
+    db.commit()
+    db.refresh(new_check_in)
+    
+    # Calculate progress score on the fly for the response
+    score = calculate_progress_score(new_check_in.actual_achievement, goal.target, goal.uom)
+    
+    # We construct a dict to append the calculated score before returning
+    response_data = schemas.CheckInResponse.model_validate(new_check_in).model_dump()
+    response_data["progress_score"] = score
+    
+    return response_data
+
+
+@app.get("/goals/{goal_id}/check-ins", response_model=List[schemas.CheckInResponse])
+def get_goal_check_ins(goal_id: int, db: Session = Depends(get_db)):
+    """Fetch all check-ins for a specific goal."""
+    goal = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    check_ins = db.query(models.CheckIn).filter(models.CheckIn.goal_id == goal_id).all()
+    
+    results = []
+    for ci in check_ins:
+        score = calculate_progress_score(ci.actual_achievement, goal.target, goal.uom)
+        ci_dict = schemas.CheckInResponse.model_validate(ci).model_dump()
+        ci_dict["progress_score"] = score
+        results.append(ci_dict)
+        
+    return results
+
+
+@app.patch("/check-ins/{check_in_id}/review", response_model=schemas.CheckInResponse)
+def review_check_in(check_in_id: int, review: schemas.CheckInReview, db: Session = Depends(get_db)):
+    """Manager adds their feedback/comment to the quarterly check-in."""
+    check_in = db.query(models.CheckIn).filter(models.CheckIn.id == check_in_id).first()
+    if not check_in:
+        raise HTTPException(status_code=404, detail="Check-in not found")
+        
+    goal = db.query(models.Goal).filter(models.Goal.id == check_in.goal_id).first()
+
+    check_in.manager_comment = review.manager_comment
+    db.commit()
+    db.refresh(check_in)
+    
+    score = calculate_progress_score(check_in.actual_achievement, goal.target, goal.uom)
+    response_data = schemas.CheckInResponse.model_validate(check_in).model_dump()
+    response_data["progress_score"] = score
+    
+    return response_data
