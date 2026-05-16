@@ -1,26 +1,36 @@
 import { create } from 'zustand';
 
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'employee' | 'manager' | 'admin';
+}
+
 interface AppState {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
-  userRole: 'employee' | 'manager' | 'admin' | null;
-  setUserRole: (role: 'employee' | 'manager' | 'admin' | null) => void;
+  user: User | null;
+  token: string | null;
+  setAuth: (user: User, token: string) => void;
+  logout: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  // Initialize theme based on user's system preference or default to light
-  theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
-  toggleTheme: () => set((state) => {
-    const newTheme = state.theme === 'light' ? 'dark' : 'light';
-    // Apply the dark class to the HTML document body
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    return { theme: newTheme };
-  }),
+  theme: 'light',
+  toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
   
-  userRole: null,
-  setUserRole: (role) => set({ userRole: role }),
+  // Real Auth State
+  user: null, 
+  token: localStorage.getItem('atomquest_token'), 
+  
+  setAuth: (user, token) => {
+    localStorage.setItem('atomquest_token', token);
+    set({ user, token });
+  },
+  
+  logout: () => {
+    localStorage.removeItem('atomquest_token');
+    set({ user: null, token: null });
+  },
 }));

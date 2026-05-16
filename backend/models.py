@@ -2,6 +2,7 @@ import enum
 from sqlalchemy import Enum, Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
+import datetime
 
 Base = declarative_base()
 
@@ -54,6 +55,7 @@ class Goal(Base):
     target = Column(Float, nullable=False) # Store dates as timestamps if Timeline
     weightage = Column(Float, nullable=False) # Must be >= 10, total per user = 100
     
+    status = Column(String, default="draft") # draft, submitted, returned, approved
     is_locked = Column(Boolean, default=False) # Locked after manager approval
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -83,3 +85,50 @@ class AuditLog(Base):
     changed_by = Column(String, ForeignKey("users.id"), nullable=False)
     change_summary = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class CycleWindow(Base):
+    __tablename__ = "cycle_windows"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    period_name = Column(String, nullable=False) # GOAL_SETTING, Q1, Q2, Q3, Q4
+    open_date = Column(DateTime(timezone=True), nullable=False)
+    close_date = Column(DateTime(timezone=True), nullable=False)
+    is_active = Column(Boolean, default=False)
+
+class SharedGoalLink(Base):
+    __tablename__ = "shared_goal_links"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    base_goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False)
+    primary_owner_id = Column(String, ForeignKey("users.id"), nullable=False)
+    recipient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    custom_weightage = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ApprovalRequest(Base):
+    __tablename__ = "approval_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False)
+    submitted_by = Column(String, ForeignKey("users.id"), nullable=False)
+    reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)
+    action = Column(String, nullable=False) # SUBMITTED, APPROVED, RETURNED
+    comment = Column(Text, nullable=True)
+    actioned_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+# Assuming you have an Enum setup, or just use strings for SQLite/Postgres simplicity
+class EscalationRule(Base):
+    __tablename__ = "escalation_rules"
+    id = Column(Integer, primary_key=True, index=True)
+    trigger_event = Column(String, unique=True) # e.g., "GOAL_NOT_SUBMITTED"
+    days_threshold = Column(Integer, default=7)
+    is_active = Column(Boolean, default=True)
+
+class EscalationLog(Base):
+    __tablename__ = "escalation_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    rule_id = Column(Integer, ForeignKey("escalation_rules.id"))
+    employee_id = Column(String, ForeignKey("users.id"))
+    manager_id = Column(String, ForeignKey("users.id"))
+    triggered_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_resolved = Column(Boolean, default=False)

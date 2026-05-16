@@ -1,8 +1,25 @@
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useState } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { apiClient } from '../api/client';
+import { useAppStore } from '../store/useAppStore';
+import { useToastStore } from '../store/useToastStore';
+import { Card } from './ui/Card';
+import { Button } from './ui/Button';
+import { Spinner } from './ui/Spinner';
 
-// Types mapping to your FastAPI Pydantic schema
+const THRUST_AREAS = [
+  "Financial Performance",
+  "Customer Success & Satisfaction",
+  "Operational Excellence",
+  "Innovation & Product Development",
+  "People, Culture & Team",
+  "Strategic Growth"
+];
+
+const MAX_GOALS = 8;
+const MAX_DESC_CHARS = 500;
+
 interface GoalFormData {
   thrust_area: string;
   title: string;
@@ -13,134 +30,267 @@ interface GoalFormData {
 }
 
 export const GoalForm = () => {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<GoalFormData>();
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const { id } = useParams<{ id: string }>(); // Captures the ID if we are editing
+  const isEditMode = !!id;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const returnComment = location.state?.returnComment; // Passed from EmployeeDashboard
 
-  const onSubmit = async (data: GoalFormData) => {
-    setServerError(null);
-    setSuccessMsg(null);
-    
-    try {
-      // DEV MODE: Hardcoding the owner_id since we bypassed Azure AD
-      const payload = { ...data, owner_id: "dev-user-001" }; 
-      
-      const response = await apiClient.post('/goals', payload);
-      setSuccessMsg(`Goal "${response.data.title}" created successfully!`);
-      reset(); // Clear the form
-    } catch (error: any) {
-      // Catch the HTTP 400 errors from FastAPI (e.g., > 100% weightage)
-      if (error.response && error.response.data) {
-        setServerError(error.response.data.detail);
-      } else {
-        setServerError("An unexpected error occurred.");
+  const { user } = useAppStore();
+  const { addToast } = useToastStore();
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [baseWeightage, setBaseWeightage] = useState(0); // Total weightage of *other* goals
+  const [goalCount, setGoalCount] = useState(0);
+
+  const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<GoalFormData>({
+    defaultValues: { weightage: 10, uom: 'min', thrust_area: THRUST_AREAS[0], description: '' }
+  });
+
+  const currentWeightage = watch('weightage') || 0;
+  const currentDescription = watch('description') || '';
+  const totalProjectedWeightage = baseWeightage + Number(currentWeightage);
+
+  useEffect(() => {
+    const initializeForm = async () => {
+      if (!user?.id) return;
+      try {
+        // 1. Fetch all goals to calculate budget and count
+        const goalsRes = await apiClient.get(`/goals/${user.id}`);
+        const allGoals = goalsRes.data;
+        
+        setGoalCount(allGoals.length);
+        
+        // Calculate the weightage used by *other* goals
+        const otherGoalsWeightage = allGoals
+          .filter((g: any) => g.id !== Number(id))
+          .reduce((sum: number, g: any) => sum + g.weightage, 0);
+        
+        setBaseWeightage(otherGoalsWeightage);
+
+        // 2. If editing, fetch the specific goal to populate the form
+        if (isEditMode) {
+          const goalToEdit = allGoals.find((g: any) => g.id === Number(id));
+          if (goalToEdit) reset(goalToEdit);
+        }
+      } catch (error) {
+        addToast("Failed to load goal data", "error");
+      } finally {
+        setLoading(false);
       }
+    };
+
+    initializeForm();
+  }, [user?.id, id, isEditMode, reset, addToast]);
+
+  const onSubmit = async (data: GoalFormData, action: 'draft' | 'submit') => {
+    setSubmitting(true);
+    try {
+      let savedGoalId = id;
+
+      // 1. Save the Goal (Create or Update)
+      if (isEditMode) {
+        await apiClient.patch(`/goals/${id}`, data);
+      } else {
+        const payload = { ...data, owner_id: user?.id };
+        const response = await apiClient.post('/goals', payload);
+        savedGoalId = response.data.id;
+      }
+
+      // 2. If "Submit for Approval", call the Phase 2 Submit Endpoint
+      if (action === 'submit') {
+        await apiClient.post(`/goals/${savedGoalId}/submit`);
+        addToast("Goal successfully submitted for manager approval!", "success");
+      } else {
+        addToast("Draft saved successfully.", "success");
+      }
+
+      navigate('/goals'); // Return to dashboard
+    } catch (error: any) {
+      addToast(error.response?.data?.detail || "Failed to save goal.", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  if (loading) return <div className="flex justify-center items-center h-64"><Spinner className="w-8 h-8 text-primary-600" /></div>;
+
   return (
-    <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm mt-6">
-      <h3 className="text-xl font-semibold text-primary-700 dark:text-primary-400 mb-4">
-        Create New Goal
-      </h3>
+    <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-      {serverError && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-md text-sm border border-red-200 dark:border-red-800">
-          ⚠️ {serverError}
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            {isEditMode ? 'Edit Goal' : 'Draft New Goal'}
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Define your objective and success metrics.</p>
+        </div>
+        <Button variant="secondary" onClick={() => navigate('/goals')}>Cancel</Button>
+      </div>
+
+      {/* Return Comment Banner */}
+      {returnComment && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+          <div className="flex">
+            <div className="flex-shrink-0">⚠️</div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">Manager Returned for Rework</h3>
+              <div className="mt-1 text-sm text-red-700">{returnComment}</div>
+            </div>
+          </div>
         </div>
       )}
-      
-      {successMsg && (
-        <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-md text-sm border border-green-200 dark:border-green-800">
-          ✅ {successMsg}
+
+      {/* Live Budget & Limitations Tracker */}
+      <Card className="p-5 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-900/10 dark:to-surface-dark border-indigo-100 dark:border-indigo-900/30">
+        <div className="flex justify-between items-end mb-2">
+          <div>
+            <h4 className="font-semibold text-gray-900 dark:text-gray-100">Goal Budget Tracker</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {goalCount} of {MAX_GOALS} goals used
+            </p>
+          </div>
+          <div className="text-right">
+            <span className={`text-2xl font-bold ${totalProjectedWeightage > 100 ? 'text-red-600' : totalProjectedWeightage === 100 ? 'text-green-600' : 'text-primary-600'}`}>
+              {totalProjectedWeightage}%
+            </span>
+            <span className="text-sm text-gray-500"> / 100% Total</span>
+          </div>
         </div>
-      )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          {/* Thrust Area */}
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Thrust Area</label>
-            <input 
-              {...register('thrust_area', { required: "Thrust Area is required" })}
-              className="w-full p-2 rounded bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
-              placeholder="e.g., Q2 Revenue"
-            />
-            {errors.thrust_area && <span className="text-xs text-red-500">{errors.thrust_area.message}</span>}
+        {/* Live Progress Bar */}
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 flex overflow-hidden">
+          {/* Base weightage from other goals */}
+          <div 
+            className="bg-indigo-300 h-3"
+            style={{ width: `${Math.min(baseWeightage, 100)}%` }}
+            title={`Other goals: ${baseWeightage}%`}
+          ></div>
+          {/* Currently editing weightage */}
+          <div 
+            className={`h-3 transition-all duration-300 ${totalProjectedWeightage > 100 ? 'bg-red-500' : 'bg-primary-600'}`}
+            style={{ width: `${Math.min(Number(currentWeightage) || 0, 100 - baseWeightage)}%` }}
+            title={`This goal: ${currentWeightage}%`}
+          ></div>
+        </div>
+        
+        {totalProjectedWeightage > 100 && (
+          <p className="text-xs text-red-500 mt-2 font-medium">Warning: Total weightage across all goals cannot exceed 100%.</p>
+        )}
+      </Card>
+
+      {/* Main Form */}
+      <Card className="p-6">
+        <form className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Thrust Area Selector */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Strategic Thrust Area</label>
+              <select 
+                {...register('thrust_area', { required: true })}
+                className="w-full p-2.5 rounded-lg bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+              >
+                {THRUST_AREAS.map(area => <option key={area} value={area}>{area}</option>)}
+              </select>
+            </div>
+
+            {/* Goal Title */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Goal Title</label>
+              <input 
+                {...register('title', { required: "Title is required" })}
+                className="w-full p-2.5 rounded-lg bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+                placeholder="e.g., Increase Q2 Enterprise Sales by 15%"
+              />
+              {errors.title && <span className="text-xs text-red-500 mt-1">{errors.title.message}</span>}
+            </div>
+
+            {/* Target Value */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Target Number</label>
+              <input 
+                type="number" step="any"
+                {...register('target', { required: "Target is required", valueAsNumber: true })}
+                className="w-full p-2.5 rounded-lg bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+                placeholder="e.g., 100000"
+              />
+            </div>
+
+            {/* UoM */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Unit of Measurement</label>
+              <select 
+                {...register('uom')}
+                className="w-full p-2.5 rounded-lg bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+              >
+                <option value="min">Numeric (Higher is better)</option>
+                <option value="max">Numeric (Lower is better)</option>
+                <option value="timeline">Timeline (Days)</option>
+                <option value="zero">Zero-based Incident Count</option>
+              </select>
+            </div>
+
+            {/* Weightage */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Weightage %</label>
+              <input 
+                type="number" step="0.5"
+                {...register('weightage', { 
+                  required: "Weightage is required",
+                  min: { value: 10, message: "Minimum weightage is 10%" },
+                  valueAsNumber: true
+                })}
+                className="w-full p-2.5 rounded-lg bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+              />
+              {errors.weightage && <span className="text-xs text-red-500 mt-1">{errors.weightage.message}</span>}
+            </div>
+
+            {/* Description with Char Count */}
+            <div className="md:col-span-2">
+              <div className="flex justify-between items-end mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Action Plan / Description</label>
+                <span className={`text-xs ${currentDescription.length > MAX_DESC_CHARS ? 'text-red-500' : 'text-gray-500'}`}>
+                  {currentDescription.length} / {MAX_DESC_CHARS}
+                </span>
+              </div>
+              <textarea 
+                {...register('description', { maxLength: MAX_DESC_CHARS })}
+                rows={4}
+                className="w-full p-2.5 rounded-lg bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
+                placeholder="Briefly describe how you plan to achieve this..."
+              />
+            </div>
+
           </div>
 
-          {/* Goal Title */}
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Goal Title</label>
-            <input 
-              {...register('title', { required: "Title is required" })}
-              className="w-full p-2 rounded bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
-              placeholder="e.g., Increase B2B Sales"
-            />
-            {errors.title && <span className="text-xs text-red-500">{errors.title.message}</span>}
-          </div>
-
-          {/* Unit of Measurement */}
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Unit of Measurement (UoM)</label>
-            <select 
-              {...register('uom')}
-              className="w-full p-2 rounded bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
+          {/* Form Actions */}
+          <div className="pt-6 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
+            <Button 
+              type="button" 
+              variant="secondary" 
+              onClick={handleSubmit((data) => onSubmit(data, 'draft'))}
+              disabled={submitting || totalProjectedWeightage > 100 || goalCount >= MAX_GOALS && !isEditMode}
             >
-              <option value="min">Numeric (Higher is better)</option>
-              <option value="max">Numeric (Lower is better)</option>
-              <option value="timeline">Timeline (Date-based)</option>
-              <option value="zero">Zero-based (e.g., Safety incidents)</option>
-            </select>
+              Save as Draft
+            </Button>
+            
+            {/* The primary submit button is strict. It requires exactly 100% total weightage to be pushed to the manager */}
+            <Button 
+              type="button" 
+              variant="primary" 
+              isLoading={submitting}
+              onClick={handleSubmit((data) => onSubmit(data, 'submit'))}
+              disabled={totalProjectedWeightage !== 100}
+              title={totalProjectedWeightage !== 100 ? "Total weightage must be exactly 100% to submit for approval." : ""}
+            >
+              Submit for Approval
+            </Button>
           </div>
-
-          {/* Target */}
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Target Value</label>
-            <input 
-              type="number" step="any"
-              {...register('target', { required: "Target is required" })}
-              className="w-full p-2 rounded bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
-            />
-            {errors.target && <span className="text-xs text-red-500">{errors.target.message}</span>}
-          </div>
-
-          {/* Weightage */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
-              Weightage % (Minimum 10%)
-            </label>
-            <input 
-              type="number" step="0.1"
-              {...register('weightage', { 
-                required: "Weightage is required",
-                min: { value: 10, message: "Minimum weightage is 10%" }
-              })}
-              className="w-full p-2 rounded bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
-            />
-            {errors.weightage && <span className="text-xs text-red-500">{errors.weightage.message}</span>}
-          </div>
-
-          {/* Description */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Description</label>
-            <textarea 
-              {...register('description')}
-              rows={3}
-              className="w-full p-2 rounded bg-background-light dark:bg-background-dark border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
-              placeholder="Briefly describe how this will be achieved..."
-            />
-          </div>
-        </div>
-
-        <button 
-          type="submit"
-          className="mt-4 px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded shadow transition-colors"
-        >
-          Submit Goal
-        </button>
-      </form>
+        </form>
+      </Card>
     </div>
   );
 };

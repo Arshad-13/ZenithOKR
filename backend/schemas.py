@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
+from datetime import datetime
 from models import UoMEnum, StatusEnum, QuarterEnum
 
 class GoalBase(BaseModel):
@@ -16,10 +17,26 @@ class GoalCreate(GoalBase):
 class GoalResponse(GoalBase):
     id: int
     owner_id: str
+    status: Optional[str] = "draft"
     is_locked: bool
     
     class Config:
         from_attributes = True
+
+class ApprovalRequestResponse(BaseModel):
+    id: int
+    goal_id: int
+    submitted_by: str
+    reviewed_by: Optional[str] = None
+    action: str
+    comment: Optional[str] = None
+    actioned_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class ReturnRequest(BaseModel):
+    comment: str
 
 class UserBasic(BaseModel):
     id: str
@@ -56,3 +73,167 @@ class CheckInResponse(CheckInBase):
 
     class Config:
         from_attributes = True
+        
+class AuditLogResponse(BaseModel):
+    id: int
+    goal_id: int
+    changed_by: str
+    change_summary: str
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+class SharedGoalCreate(BaseModel):
+    base_goal_id: int
+    recipient_ids: List[str]
+    primary_owner_id: str
+
+class SharedGoalLinkResponse(BaseModel):
+    id: int
+    base_goal_id: int
+    primary_owner_id: str
+    recipient_id: str
+    custom_weightage: Optional[float] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class SharedGoalWeightageUpdate(BaseModel):
+    custom_weightage: float = Field(..., ge=10, le=100)
+
+class SharedGoalAchievementUpdate(BaseModel):
+    quarter: QuarterEnum
+    actual_achievement: float
+
+class CycleWindowBase(BaseModel):
+    period_name: str
+    open_date: datetime
+    close_date: datetime
+
+class CycleWindowCreate(CycleWindowBase):
+    pass
+    
+class CycleWindowResponse(CycleWindowBase):
+    id: int
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+class UnlockRequest(BaseModel):
+    reason: str
+
+class CompletionRow(BaseModel):
+    id: str
+    name: str
+    department: str
+    goals_submitted: int
+    goals_approved: int
+    check_in_status: str 
+    last_activity: Optional[datetime] = None
+
+class AchievementReportRow(BaseModel):
+    employee_name: str
+    goal_title: str
+    quarter: str
+    planned_target: float
+    actual_achievement: float
+    progress_score: float
+
+class GoalApproveRequest(BaseModel):
+    target: float
+    weightage: float
+
+class GoalReturnRequest(BaseModel):
+    comment: str
+
+class TeamCheckInResponse(BaseModel):
+    id: int  # Check-in ID
+    quarter: str
+    actual_achievement: float
+    status: str
+    manager_comment: Optional[str] = None
+    progress_score: float
+    goal_id: int
+    goal_title: str
+    goal_thrust_area: str
+    goal_target: float
+    goal_uom: str
+    employee_id: str
+    employee_name: str
+
+    class Config:
+        from_attributes = True
+        
+class SharedGoalCreate(BaseModel):
+    title: str
+    description: str
+    thrust_area: str
+    uom: str
+    target: float
+    weightage: float
+    recipient_ids: List[str]
+    primary_owner_id: str
+    
+class AdminCompletionRow(BaseModel):
+    user_id: str
+    name: str
+    department: str
+    goals_submitted: int
+    goals_approved: int
+    check_in_completed: bool
+    status_category: str  # "complete", "in_progress", "not_started"
+
+    class Config:
+        from_attributes = True
+        
+class AdminUnlockRequest(BaseModel):
+    reason: str
+
+class AdminAuditLogResponse(BaseModel):
+    id: int
+    timestamp: datetime
+    goal_id: int
+    goal_title: str
+    employee_name: str
+    changed_by_name: str
+    change_summary: str
+
+    class Config:
+        from_attributes = True
+
+class QoQTrendPoint(BaseModel):
+    quarter: str
+    Engineering: float
+    Management: float
+
+class GoalDistributionPoint(BaseModel):
+    name: str
+    value: int
+
+class UoMBreakdownPoint(BaseModel):
+    name: str
+    count: int
+
+class ManagerEffectivenessPoint(BaseModel):
+    name: str
+    completionRate: float
+
+class AdminAnalyticsResponse(BaseModel):
+    qoq_trends: List[QoQTrendPoint]
+    goal_distribution: List[GoalDistributionPoint]
+    uom_breakdown: List[UoMBreakdownPoint]
+    manager_effectiveness: List[ManagerEffectivenessPoint]
+
+class EscalationRuleUpdate(BaseModel):
+    days_threshold: int
+    is_active: bool
+
+class EscalationLogResponse(BaseModel):
+    id: int
+    trigger_event: str
+    employee_name: str
+    manager_name: str
+    triggered_at: datetime
+    is_resolved: bool
