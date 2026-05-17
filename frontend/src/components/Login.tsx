@@ -145,7 +145,7 @@ export const Login = () => {
         </form>
 
         <div className="mt-6 text-center text-xs text-gray-400">
-          Demo accounts: employee@ / manager@ / admin@atomquest.com · Password: test1234
+          Demo accounts: employee@ / manager@ / admin@atomquest.com · Password: atomquest123
         </div>
       </div>
     </div>
