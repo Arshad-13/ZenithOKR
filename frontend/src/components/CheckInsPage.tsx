@@ -45,25 +45,27 @@ export const CheckInsPage = () => {
 
         if (cycleRes.data) {
           // 2. Fetch approved goals + existing check-in data for this cycle window
-          // For the hackathon, we fetch the goals and append empty/existing tracking values
           const goalsRes = await apiClient.get(`/goals/${user.id}`);
           const approvedOnly = goalsRes.data.filter((g: any) => g.is_locked === true);
           
-          // Hydrate rows with default values or merge with any existing check-in entries
-          const hydratedGoals = await Promise.all(
-            approvedOnly.map(async (goal: any) => {
-              const ciRes = await apiClient.get(`/goals/${goal.id}/check-ins`);
-              const currentQuarterCi = ciRes.data.find((c: any) => c.quarter === cycleRes.data.period_name);
-              
-              return {
-                ...goal,
-                current_check_in_id: currentQuarterCi?.id || null,
-                actual_achievement: currentQuarterCi?.actual_achievement ?? 0,
-                status: currentQuarterCi?.status || 'not_started',
-                is_shared_recipient: goal.is_shared_recipient || false // Populated if Phase 2 shared logic flag exists
-              };
-            })
-          );
+          // 3. Fetch all existing check-in entries in one query to avoid N+1 fetches
+          const allCheckInsRes = await apiClient.get(`/users/${user.id}/all-check-ins`);
+          const allCheckIns = allCheckInsRes.data;
+
+          // Merge goals with any existing check-ins for the active quarter
+          const hydratedGoals = approvedOnly.map((goal: any) => {
+            const currentQuarterCi = allCheckIns.find(
+              (c: any) => c.goal_id === goal.id && c.quarter === cycleRes.data.period_name
+            );
+            
+            return {
+              ...goal,
+              current_check_in_id: currentQuarterCi?.id || null,
+              actual_achievement: currentQuarterCi?.actual_achievement ?? 0,
+              status: currentQuarterCi?.status || 'not_started',
+              is_shared_recipient: goal.is_shared_recipient || false
+            };
+          });
           
           setGoals(hydratedGoals);
         }

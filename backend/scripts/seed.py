@@ -26,6 +26,10 @@ from models import (
     ApprovalRequest, AuditLog, EscalationRule, EscalationLog,
     RoleEnum, UoMEnum, StatusEnum, QuarterEnum
 )
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from auth.security import get_password_hash
+
+DEMO_PASSWORD = get_password_hash("atomquest123")  # All demo accounts use this password
 
 
 def wipe_db():
@@ -99,15 +103,18 @@ def seed():
         # -- 1. Users ------------------------------------------------
         get_or_create(db, User,
             {"id": ADMIN_ID},
-            {"name": "Priya Sharma (HR Admin)", "email": "admin@atomquest.com", "role": RoleEnum.ADMIN}
+            {"name": "Priya Sharma (HR Admin)", "email": "admin@atomquest.com",
+             "role": RoleEnum.ADMIN, "hashed_password": DEMO_PASSWORD}
         )
         mgr1 = get_or_create(db, User,
             {"id": MGR1_ID},
-            {"name": "Arjun Mehta", "email": "manager@atomquest.com", "role": RoleEnum.MANAGER}
+            {"name": "Arjun Mehta", "email": "manager@atomquest.com",
+             "role": RoleEnum.MANAGER, "hashed_password": DEMO_PASSWORD}
         )
         mgr2 = get_or_create(db, User,
             {"id": MGR2_ID},
-            {"name": "Sneha Rao", "email": "manager2@atomquest.com", "role": RoleEnum.MANAGER}
+            {"name": "Sneha Rao", "email": "manager2@atomquest.com",
+             "role": RoleEnum.MANAGER, "hashed_password": DEMO_PASSWORD}
         )
 
         emp_data = [
@@ -123,7 +130,8 @@ def seed():
         for eid, name, email, mgr_id in emp_data:
             emp = get_or_create(db, User,
                 {"id": eid},
-                {"name": name, "email": email, "role": RoleEnum.EMPLOYEE, "manager_id": mgr_id}
+                {"name": name, "email": email, "role": RoleEnum.EMPLOYEE,
+                 "manager_id": mgr_id, "hashed_password": DEMO_PASSWORD}
             )
             employees.append(emp)
 

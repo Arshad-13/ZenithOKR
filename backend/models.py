@@ -33,11 +33,12 @@ class QuarterEnum(enum.Enum):
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(String, primary_key=True, index=True) # Will store Azure AD Object ID
+    id = Column(String, primary_key=True, index=True) # Azure AD Object ID or internal ID
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     role = Column(Enum(RoleEnum), default=RoleEnum.EMPLOYEE, nullable=False)
-    manager_id = Column(String, ForeignKey("users.id"), nullable=True) # Self-referencing hierarchy
+    hashed_password = Column(String, nullable=True)  # NULL for SSO users; set for demo/password users
+    manager_id = Column(String, ForeignKey("users.id"), nullable=True)
     
     # Relationships
     manager = relationship("User", remote_side=[id], backref="team_members")
@@ -110,7 +111,7 @@ class ApprovalRequest(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False)
-    submitted_by = Column(String, ForeignKey("users.id"), nullable=False)
+    submitted_by = Column(String, ForeignKey("users.id"), nullable=True)
     reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)
     action = Column(String, nullable=False) # SUBMITTED, APPROVED, RETURNED
     comment = Column(Text, nullable=True)

@@ -266,29 +266,6 @@ def submit_goal(goal_id: int, db: Session = Depends(get_db), current_user: model
     db.refresh(goal)
     return goal
 
-@app.post("/goals/{goal_id}/return", response_model=schemas.GoalResponse)
-def return_goal(goal_id: int, return_req: schemas.ReturnRequest, db: Session = Depends(get_db), current_user: models.User = Depends(require_role([models.RoleEnum.MANAGER, models.RoleEnum.ADMIN]))):
-    """Manager returns goal for rework."""
-    goal = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
-    if not goal:
-        raise HTTPException(status_code=404, detail="Goal not found")
-        
-    if goal.status != "submitted":
-        raise HTTPException(status_code=400, detail="Can only return submitted goals.")
-        
-    goal.status = "draft"
-    
-    approval_request = models.ApprovalRequest(
-        goal_id=goal.id,
-        submitted_by=goal.owner_id,
-        reviewed_by=current_user.id,
-        action="RETURNED",
-        comment=return_req.comment
-    )
-    db.add(approval_request)
-    db.commit()
-    db.refresh(goal)
-    return goal
 
 @app.get("/goals/{goal_id}/history", response_model=List[schemas.ApprovalRequestResponse])
 def get_goal_history(goal_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -420,6 +397,34 @@ def get_goal_check_ins(goal_id: int, db: Session = Depends(get_db), current_user
     check_ins = db.query(models.CheckIn).filter(models.CheckIn.goal_id == goal_id).all()
     
     return [build_check_in_response(ci, goal) for ci in check_ins]
+
+
+@app.get("/users/{user_id}/all-check-ins", response_model=List[schemas.CheckInResponse])
+def get_user_all_check_ins(user_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Fetch all check-ins across all goals for a specific user to resolve N+1 queries."""
+    if current_user.role == models.RoleEnum.EMPLOYEE and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
+    check_ins = db.query(models.CheckIn).join(
+        models.Goal, models.CheckIn.goal_id == models.Goal.id
+    ).filter(
+        models.Goal.owner_id == user_id
+    ).all()
+    
+    responses = []
+    for ci in check_ins:
+        goal = ci.goal
+        score = calculate_progress_score(ci.actual_achievement, goal.target, goal.uom)
+        responses.append(schemas.CheckInResponse(
+            id=ci.id,
+            goal_id=ci.goal_id,
+            quarter=ci.quarter,
+            actual_achievement=ci.actual_achievement,
+            status=ci.status,
+            manager_comment=ci.manager_comment,
+            progress_score=score
+        ))
+    return responses
 
 
 @app.patch("/check-ins/{check_in_id}/review", response_model=schemas.CheckInResponse)
@@ -601,6 +606,7 @@ def approve_goal(
     approval_record = models.ApprovalRequest(
         goal_id=goal.id,
         action="APPROVED",
+        submitted_by=goal.owner_id,
         reviewed_by=current_user.id
     )
     db.add(approval_record)
@@ -643,6 +649,7 @@ def return_goal(
         goal_id=goal.id,
         action="RETURNED",
         comment=payload.comment,
+        submitted_by=goal.owner_id,
         reviewed_by=current_user.id
     )
     

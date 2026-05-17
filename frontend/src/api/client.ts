@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAppStore } from '../store/useAppStore';
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
@@ -9,7 +10,7 @@ export const apiClient = axios.create({
 
 // Request Interceptor: Attach JWT token to every request
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('atomquest_token');
+  const token = useAppStore.getState().token;
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -25,8 +26,8 @@ apiClient.interceptors.response.use(
     const status = error.response?.status;
 
     if (status === 401) {
-      // Token expired or invalid — force logout and redirect
-      localStorage.removeItem('atomquest_token');
+      // Token expired or invalid — force logout and redirect via useAppStore
+      useAppStore.getState().logout();
       window.location.href = '/login';
       return Promise.reject(error);
     }

@@ -341,165 +341,135 @@ export const TeamGoalsPage = () => {
         </div>
       )}
 
-      {/* Wrap your existing Grouped Sheets logic so it only shows if NOT on analytics tab */}
+      {/* Accordion List — only shown when NOT on analytics tab */}
       {activeTab !== 'analytics' && (
-         <div className="space-y-4">
-            {/* ... Your existing Accordion mapping for groupedSheets goes here ... */}
-         </div>
-      )}
+        Object.keys(groupedSheets).length === 0 ? (
+          <EmptyState 
+            icon="👥"
+            title={`No targets match your query`}
+            description={`There are currently no employee goal sheets assigned to the "${activeTab}" validation cycle.`}
+          />
+        ) : (
+          <div className="space-y-4">
+            {Object.values(groupedSheets).map(({ employee, goals }) => {
+              const isExpanded = !!expandedEmployees[employee.id];
+              
+              const liveTotalWeightage = goals.reduce((sum, g) => {
+                const currentEdit = inlineEdits[g.id];
+                return sum + (currentEdit ? currentEdit.weightage : g.weightage);
+              }, 0);
 
-      {/* Accordion List Base View Container */}
-      {Object.keys(groupedSheets).length === 0 ? (
-        <EmptyState 
-          icon="👥"
-          title={`No targets match your query`}
-          description={`There are currently no employee goal sheets assigned to the "${activeTab}" validation cycle.`}
-        />
-      ) : (
-        <div className="space-y-4">
-          {Object.values(groupedSheets).map(({ employee, goals }) => {
-            const isExpanded = !!expandedEmployees[employee.id];
-            
-            // Calculate sheet-level weightage totals reflecting live input variables
-            const liveTotalWeightage = goals.reduce((sum, g) => {
-              const currentEdit = inlineEdits[g.id];
-              return sum + (currentEdit ? currentEdit.weightage : g.weightage);
-            }, 0);
+              const hasPendingActions = goals.some(g => !g.is_locked && g.status === 'submitted');
 
-            const hasPendingActions = goals.some(g => !g.is_locked && g.status === 'submitted');
-
-            return (
-              <Card key={employee.id} className="overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm">
-                
-                {/* Employee Card Summary Accordion Trigger Row */}
-                <div 
-                  onClick={() => toggleAccordion(employee.id)}
-                  className="p-5 bg-gray-50/70 dark:bg-gray-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-900/70 transition-colors border-b border-gray-100 dark:border-gray-800"
-                >
-                  <div className="flex items-center gap-4">
-                    <span className="text-xl transform transition-transform duration-200 inline-block">
-                      {isExpanded ? '▼' : '▶'}
-                    </span>
-                    <div>
-                      <h3 className="font-bold text-gray-900 dark:text-gray-100 text-base">{employee.name}</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">{goals.length} Balanced Scorecard Objectives assigned</p>
-                    </div>
-                  </div>
-
-                  {/* Right Status Meta Tags Block */}
-                  <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400 font-medium">Sheet Weightage Allocation</p>
-                      <p className={`text-sm font-bold ${liveTotalWeightage === 100 ? 'text-green-600' : 'text-amber-500 font-semibold'}`}>
-                        {liveTotalWeightage}% / 100%
-                      </p>
-                    </div>
-
-                    {/* Quick Access Top-Level Sheet Workflow Commands */}
-                    {hasPendingActions && activeTab === 'pending' && (
-                      <div className="flex gap-2 ml-2">
-                        <Button 
-                          variant="secondary" 
-                          size="sm" 
-                          onClick={() => handleOpenReturnModal(employee.id)}
-                          disabled={submittingAction}
-                        >
-                          Return Rework
-                        </Button>
-                        <Button 
-                          variant="primary" 
-                          size="sm"
-                          onClick={() => handleApproveSheet(employee.id, goals)}
-                          disabled={submittingAction || liveTotalWeightage !== 100}
-                          title={liveTotalWeightage !== 100 ? "Total weightage allocation must equal exactly 100% to initialize block storage locking." : ""}
-                        >
-                          Authorize & Lock
-                        </Button>
+              return (
+                <Card key={employee.id} className="overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm">
+                  
+                  {/* Employee Card Summary Accordion Trigger Row */}
+                  <div 
+                    onClick={() => toggleAccordion(employee.id)}
+                    className="p-5 bg-gray-50/70 dark:bg-gray-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-900/70 transition-colors border-b border-gray-100 dark:border-gray-800"
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="text-xl transform transition-transform duration-200 inline-block">
+                        {isExpanded ? '▼' : '▶'}
+                      </span>
+                      <div>
+                        <h3 className="font-bold text-gray-900 dark:text-gray-100 text-base">{employee.name}</h3>
+                        <p className="text-xs text-gray-400 mt-0.5">{goals.length} Balanced Scorecard Objectives assigned</p>
                       </div>
-                    )}
+                    </div>
+
+                    <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400 font-medium">Sheet Weightage Allocation</p>
+                        <p className={`text-sm font-bold ${liveTotalWeightage === 100 ? 'text-green-600' : 'text-amber-500 font-semibold'}`}>
+                          {liveTotalWeightage}% / 100%
+                        </p>
+                      </div>
+
+                      {hasPendingActions && activeTab === 'pending' && (
+                        <div className="flex gap-2 ml-2">
+                          <Button variant="secondary" size="sm" onClick={() => handleOpenReturnModal(employee.id)} disabled={submittingAction}>
+                            Return Rework
+                          </Button>
+                          <Button 
+                            variant="primary" size="sm"
+                            onClick={() => handleApproveSheet(employee.id, goals)}
+                            disabled={submittingAction || liveTotalWeightage !== 100}
+                            title={liveTotalWeightage !== 100 ? "Total weightage must equal 100% to lock." : ""}
+                          >
+                            Authorize & Lock
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Sub-Table Expansion Grid */}
-                {isExpanded && (
-                  <div className="overflow-x-auto animate-in slide-in-from-top-2 duration-200">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-white dark:bg-gray-900 text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">
-                          <th className="p-4 font-medium pl-12">Performance Dimension</th>
-                          <th className="p-4 font-medium">UoM Strategy</th>
-                          <th className="p-4 font-medium w-40">Target Value (Editable)</th>
-                          <th className="p-4 font-medium w-36">Weightage % (Editable)</th>
-                          <th className="p-4 font-medium">Audit Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800 bg-white dark:bg-surface-dark">
-                        {goals.map((goal) => {
-                          const edits = inlineEdits[goal.id] || { target: goal.target, weightage: goal.weightage };
-                          const isEditable = !goal.is_locked && activeTab === 'pending';
+                  {isExpanded && (
+                    <div className="overflow-x-auto animate-in slide-in-from-top-2 duration-200">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-white dark:bg-gray-900 text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">
+                            <th className="p-4 font-medium pl-12">Performance Dimension</th>
+                            <th className="p-4 font-medium">UoM Strategy</th>
+                            <th className="p-4 font-medium w-40">Target Value (Editable)</th>
+                            <th className="p-4 font-medium w-36">Weightage % (Editable)</th>
+                            <th className="p-4 font-medium">Audit Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800 bg-white dark:bg-surface-dark">
+                          {goals.map((goal) => {
+                            const edits = inlineEdits[goal.id] || { target: goal.target, weightage: goal.weightage };
+                            const isEditable = !goal.is_locked && activeTab === 'pending';
 
-                          return (
-                            <tr key={goal.id} className="hover:bg-gray-50/40 dark:hover:bg-gray-900/10 transition-colors">
-                              {/* Title Context Details */}
-                              <td className="p-4 pl-12 max-w-sm">
-                                <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm whitespace-normal">{goal.title}</p>
-                                <span className="inline-block mt-1 text-[10px] uppercase font-mono tracking-wider bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded">
-                                  {goal.thrust_area}
-                                </span>
-                              </td>
-
-                              {/* Unit of Measurement Strategy Display */}
-                              <td className="p-4 text-sm font-mono text-gray-500 dark:text-gray-400 capitalize">
-                                {goal.uom === 'zero' ? 'Zero-based' : goal.uom}
-                              </td>
-
-                              {/* Target Inline Field Input */}
-                              <td className="p-4">
-                                <input 
-                                  type="number"
-                                  step="any"
-                                  disabled={!isEditable}
-                                  value={edits.target}
-                                  onChange={(e) => handleInlineChange(goal.id, 'target', parseFloat(e.target.value) || 0)}
-                                  className="w-full p-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-transparent disabled:border-transparent disabled:bg-transparent focus:ring-1 focus:ring-primary-500 focus:bg-white dark:focus:bg-gray-900 outline-none font-medium transition-all text-gray-900 dark:text-white disabled:opacity-80"
-                                />
-                              </td>
-
-                              {/* Weightage Inline Field Input */}
-                              <td className="p-4">
-                                <input 
-                                  type="number"
-                                  step="0.5"
-                                  disabled={!isEditable}
-                                  value={edits.weightage}
-                                  onChange={(e) => handleInlineChange(goal.id, 'weightage', parseFloat(e.target.value) || 0)}
-                                  className="w-full p-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-transparent disabled:border-transparent disabled:bg-transparent focus:ring-1 focus:ring-primary-500 focus:bg-white dark:focus:bg-gray-900 outline-none font-medium transition-all text-gray-900 dark:text-white disabled:opacity-80"
-                                />
-                              </td>
-
-                              {/* Status Chip Indicator Column */}
-                              <td className="p-4">
-                                {goal.is_locked ? (
-                                  <Badge variant="success">Locked</Badge>
-                                ) : goal.status === 'submitted' ? (
-                                  <Badge variant="warning">In Review</Badge>
-                                ) : goal.status === 'returned' ? (
-                                  <Badge variant="danger">Rework</Badge>
-                                ) : (
-                                  <Badge variant="info">Draft</Badge>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+                            return (
+                              <tr key={goal.id} className="hover:bg-gray-50/40 dark:hover:bg-gray-900/10 transition-colors">
+                                <td className="p-4 pl-12 max-w-sm">
+                                  <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm whitespace-normal">{goal.title}</p>
+                                  <span className="inline-block mt-1 text-[10px] uppercase font-mono tracking-wider bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded">
+                                    {goal.thrust_area}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-sm font-mono text-gray-500 dark:text-gray-400 capitalize">
+                                  {goal.uom === 'zero' ? 'Zero-based' : goal.uom}
+                                </td>
+                                <td className="p-4">
+                                  <input type="number" step="any" disabled={!isEditable}
+                                    value={edits.target}
+                                    onChange={(e) => handleInlineChange(goal.id, 'target', parseFloat(e.target.value) || 0)}
+                                    className="w-full p-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-transparent disabled:border-transparent focus:ring-1 focus:ring-primary-500 outline-none font-medium transition-all text-gray-900 dark:text-white disabled:opacity-80"
+                                  />
+                                </td>
+                                <td className="p-4">
+                                  <input type="number" step="0.5" disabled={!isEditable}
+                                    value={edits.weightage}
+                                    onChange={(e) => handleInlineChange(goal.id, 'weightage', parseFloat(e.target.value) || 0)}
+                                    className="w-full p-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-transparent disabled:border-transparent focus:ring-1 focus:ring-primary-500 outline-none font-medium transition-all text-gray-900 dark:text-white disabled:opacity-80"
+                                  />
+                                </td>
+                                <td className="p-4">
+                                  {goal.is_locked ? (
+                                    <Badge variant="success">Locked</Badge>
+                                  ) : goal.status === 'submitted' ? (
+                                    <Badge variant="warning">In Review</Badge>
+                                  ) : goal.status === 'returned' ? (
+                                    <Badge variant="danger">Rework</Badge>
+                                  ) : (
+                                    <Badge variant="info">Draft</Badge>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )
       )}
 
       {/* Rework Diagnostics Action Modal Sheet Overlay */}
