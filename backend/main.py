@@ -55,12 +55,19 @@ async def integrity_exception_handler(request: Request, exc: IntegrityError):
         content={"detail": "A database constraint was violated. The record may already exist.", "code": "INTEGRITY_ERROR"}
     )
 
+import traceback
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Catch-all for any unhandled server-side error."""
+    tb = traceback.format_exc()
     return JSONResponse(
         status_code=500,
-        content={"detail": "An unexpected server error occurred.", "code": "INTERNAL_ERROR"}
+        content={
+            "detail": f"Internal Server Error: {str(exc)}",
+            "code": "INTERNAL_ERROR",
+            "traceback": tb
+        }
     )
 
 @app.get("/health")
